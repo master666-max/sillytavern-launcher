@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">酒馆</string>
+    <string name="extracting">正在准备酒馆环境（仅首次，约几分钟）</string>
+    <string name="starting">启动中…</string>
+    <string name="launch">启动酒馆</string>
+    <string name="reset_env">重置环境</string>
+    <string name="reset_confirm">删除全部酒馆数据（角色卡、聊天记录）并重新解压环境？此操作不可恢复。</string>
+    <string name="env_ready">内置环境 v%1$s 就绪 · 离线可用</string>
+    <string name="extract_phase">%1$s…</string>
+    <string name="extract_count">已写入 %1$d 项</string>
+    <string name="extract_failed">初始化失败：%1$s</string>
+    <string name="extract_failed_short">环境初始化失败，请重置后重试</string>
+    <string name="start_failed">启动失败</string>
+    <string name="retry">重试</string>
+    <string name="load_error">加载失败：%1$s\n请确认酒馆服务已启动</string>
+    <string name="choose_file">选择文件</string>
+</resources>

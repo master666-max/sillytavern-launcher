@@ -1,0 +1,255 @@
+package io.github.master666max.sillytavern;
+
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.app.Service;
+import android.content.Intent;
+import android.os.Build;
+import android.os.Handler;
+import android.os.IBinder;
+import android.os.Looper;
+import java.io.File;
+import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.Map;
+
+/**
+ * Foreground service that runs the bundled SillyTavern Node server via proot
+ * and keeps it alive while the app is backgrounded.
+ *
+ * The child process is launched strictly as an argv list through
+ * ProcessBuilder (no shell involved); all arguments are package-internal
+ * paths built by RuntimeProvision, never user input.
+ */
+public class NodeService extends Service {
+
+    public static final String ACTION_START = "io.github.master666max.sillytavern.START";
+    public static final String ACTION_STOP = "io.github.master666max.sillytavern.STOP";
+    public static final String ACTION_READY = "io.github.master666max.sillytavern.READY";
+    public static final String ACTION_FAILED = "io.github.master666max.sillytavern.FAILED";
+
+    private static final String CHANNEL_ID = "st_service";
+    private static final int NOTIF_ID = 1;
+    // First start compiles the ST frontend: 8+ min on weak devices.
+    private static final long READY_TIMEOUT_MS = 900_000;
+    private static final long POLL_INTERVAL_MS = 800;
+
+    private Process process;
+    private Thread waiter;
+    private final Handler main = new Handler(Looper.getMainLooper());
+
+    @Override
+    public IBinder onBind(Intent intent) {
+        return null;
+    }
+
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null && ACTION_STOP.equals(intent.getAction())) {
+            stopServer();
+            return START_NOT_STICKY;
+        }
+        startForeground(NOTIF_ID, buildNotification("酒馆服务运行中"));
+        if (process == null) {
+            startServer();
+        }
+        return START_STICKY;
+    }
+
+    private void startServer() {
+        try {
+            RuntimeProvision.provision(this);
+        } catch (IOException e) {
+            broadcast(ACTION_FAILED, "运行时初始化失败: " + e.getMessage());
+            stopSelf();
+            return;
+        }
+        Process proc = launchChild();
+        if (proc == null) {
+            broadcast(ACTION_FAILED, "无法启动内置环境");
+            stopSelf();
+            return;
+        }
+        process = proc;
+        trackExit(proc);
+        pollReady();
+    }
+
+    /** argv-list launch: no shell, no string concatenation of user data. */
+    private Process launchChild() {
+        File runtime = RuntimeProvision.runtimeDir(this);
+        String[] cmd = RuntimeProvision.prootCommand(RuntimeProvision.rootfsDir(this), runtime);
+        Map<String, String> env = RuntimeProvision.prootEnv(runtime, getCacheDir());
+        File log = RuntimeProvision.logFile(this);
+        if (log.exists()) {
+            log.delete();
+        }
+        ProcessBuilder pb = new ProcessBuilder();
+        pb.command(cmd);
+        pb.directory(getFilesDir());
+        pb.redirectErrorStream(true);
+        pb.redirectOutput(ProcessBuilder.Redirect.appendTo(log));
+        pb.environment().putAll(env);
+        try {
+            return pb.start();
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    private void trackExit(final Process proc) {
+        waiter = new Thread(() -> {
+            try {
+                int code = proc.waitFor();
+                if (code != 0 && process == proc) {
+                    main.post(() -> {
+                        if (process == proc) {
+                            broadcast(ACTION_FAILED, "内置环境异常退出（代码 " + code + "），详见 st.log");
+                        }
+                    });
+                }
+            } catch (InterruptedException ignored) {
+                // service shutting down
+            }
+        }, "st-exit-watcher");
+        waiter.setDaemon(true);
+        waiter.start();
+    }
+
+    private void pollReady() {
+        final long deadline = System.currentTimeMillis() + READY_TIMEOUT_MS;
+        Thread t = new Thread(() -> {
+            while (System.currentTimeMillis() < deadline) {
+                if (isServerUp()) {
+                    broadcast(ACTION_READY, null);
+                    startWatchdog();
+                    return;
+                }
+                try {
+                    Thread.sleep(POLL_INTERVAL_MS);
+                } catch (InterruptedException e) {
+                    return;
+                }
+            }
+            broadcast(ACTION_FAILED, "等待酒馆启动超时");
+        }, "st-ready-poll");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /** After READY: if the server dies (OOM, ANR-kill), relaunch it (max 5x). */
+    private void startWatchdog() {
+        Thread t = new Thread(() -> {
+            int restarts = 0;
+            try {
+                while (restarts < 5) {
+                    Thread.sleep(30_000);
+                    if (process == null) {
+                        return; // stopped by user
+                    }
+                    if (isServerUp()) {
+                        continue;
+                    }
+                    Thread.sleep(5_000);
+                    if (process == null) {
+                        return;
+                    }
+                    if (isServerUp()) {
+                        continue;
+                    }
+                    process.destroy();
+                    Process proc = launchChild();
+                    if (proc == null) {
+                        main.post(() -> broadcast(ACTION_FAILED, "酒馆进程掉线且重启失败"));
+                        return;
+                    }
+                    process = proc;
+                    restarts++;
+                    trackExit(proc);
+                    pollReady();
+                }
+            } catch (InterruptedException ignored) {
+                // stopped
+            }
+        }, "st-watchdog");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private boolean isServerUp() {
+        try {
+            HttpURLConnection conn = (HttpURLConnection) new URL(
+                    "http://127.0.0.1:" + RuntimeProvision.ST_PORT + "/").openConnection();
+            conn.setConnectTimeout(1000);
+            conn.setReadTimeout(1000);
+            int code = conn.getResponseCode();
+            conn.disconnect();
+            return code > 0;
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    private void stopServer() {
+        if (process != null) {
+            process.destroy();
+            if (waiter != null) {
+                waiter.interrupt();
+            }
+            try {
+                if (!process.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)) {
+                    process.destroyForcibly();
+                }
+            } catch (InterruptedException ignored) {
+                process.destroyForcibly();
+            }
+            process = null;
+        }
+        stopForeground(true);
+        stopSelf();
+    }
+
+    @Override
+    public void onDestroy() {
+        if (process != null) {
+            process.destroy();
+            process = null;
+        }
+        super.onDestroy();
+    }
+
+    private void broadcast(String action, String message) {
+        Intent i = new Intent(action).setPackage(getPackageName());
+        if (message != null) {
+            i.putExtra("message", message);
+        }
+        sendBroadcast(i);
+    }
+
+    private Notification buildNotification(String text) {
+        NotificationManager nm = getSystemService(NotificationManager.class);
+        if (Build.VERSION.SDK_INT >= 26 && nm.getNotificationChannel(CHANNEL_ID) == null) {
+            nm.createNotificationChannel(new NotificationChannel(CHANNEL_ID, "酒馆服务",
+                    NotificationManager.IMPORTANCE_LOW));
+        }
+        Intent open = new Intent(this, MainActivity.class);
+        PendingIntent pi = PendingIntent.getActivity(this, 0, open,
+                PendingIntent.FLAG_UPDATE_CURRENT);
+        Intent stop = new Intent(this, NodeService.class).setAction(ACTION_STOP);
+        PendingIntent stopPi = PendingIntent.getService(this, 1, stop,
+                PendingIntent.FLAG_UPDATE_CURRENT);
+        Notification.Builder b = Build.VERSION.SDK_INT >= 26
+                ? new Notification.Builder(this, CHANNEL_ID)
+                : new Notification.Builder(this);
+        return b.setContentTitle("酒馆")
+                .setContentText(text)
+                .setSmallIcon(android.R.drawable.stat_notify_sync_noanim)
+                .setContentIntent(pi)
+                .addAction(new Notification.Action.Builder(null, "停止", stopPi).build())
+                .setOngoing(true)
+                .build();
+    }
+}

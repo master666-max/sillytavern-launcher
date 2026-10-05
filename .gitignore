@@ -1,0 +1,13 @@
+assets-src/
+dist/
+shots/
+downloads/
+*.keystore
+app/src/main/assets/rootfs.stgz
+app/src/main/assets/rootfs.tar.gz
+app/build/
+build/
+.gradle/
+local.properties
+pipeline/__pycache__/
+*.iml

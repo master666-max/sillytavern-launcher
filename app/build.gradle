@@ -1,0 +1,59 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'io.github.master666max.sillytavern'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'io.github.master666max.sillytavern'
+        minSdk 26
+        // targetSdk stays 28 (same as Termux): keeps private dirs executable,
+        // which the proot+node runtime requires.
+        targetSdk 28
+        versionCode 1
+        versionName "1.0.0"
+    }
+
+    androidResources {
+        noCompress += ['stgz']
+    }
+
+    signingConfigs {
+        release {
+            def ksPath = rootProject.file('keystore/stlauncher.keystore')
+            if (ksPath.exists()) {
+                storeFile ksPath
+                storePassword System.getenv('STL_KS_PASS') ?: 'stlauncher'
+                keyAlias 'stlauncher'
+                keyPassword System.getenv('STL_KS_PASS') ?: 'stlauncher'
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (signingConfigs.release.storeFile != null) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        // targetSdk 28 is deliberate: it keeps app-private dirs executable
+        // (W^X exemption, same strategy as Termux), which the proot+node
+        // runtime requires. This app is sideloaded, never Play-Store shipped.
+        disable 'ExpiredTargetSdkVersion'
+    }
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+}
