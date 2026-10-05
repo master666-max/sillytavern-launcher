@@ -160,13 +160,15 @@ def build(abi, out_path, assets_src):
         return False
 
     merger.add_tarball(s["rootfs"], skip=skip_debian)  # Debian base -> /
+    # DNS: on the x86_64 emulator only 10.0.2.3 (its built-in proxy) resolves;
+    # on real phones public resolvers are reachable but 10.0.2.3 doesn't exist.
+    if abi == "x86_64":
+        resolv = "nameserver 10.0.2.3\nnameserver 223.5.5.5\nnameserver 119.29.29.29\n"
+    else:
+        resolv = "nameserver 223.5.5.5\nnameserver 119.29.29.29\nnameserver 10.0.2.3\n"
+    merger.add_bytes("etc/resolv.conf", resolv.encode(), mode=0o644)
     merger.add_tarball(s["node"], strip_components=1, prefix="usr/local", skip=skip_node)
     merger.add_tree(os.path.join(assets_src, "SillyTavern"), "opt/st")
-    merger.add_bytes(
-        "etc/resolv.conf",
-        b"nameserver 223.5.5.5\nnameserver 119.29.29.29\noptions timeout:2 attempts:2\n",
-        mode=0o644,
-    )
     merger.add_bytes(
         "opt/st/config.yaml",
         _st_config().encode("utf-8"),

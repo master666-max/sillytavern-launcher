@@ -14,6 +14,21 @@
 - 全屏 WebView 承载酒馆界面，支持角色卡等文件上传
 - 服务掉线自动重启（看门狗），node 以低优先级运行避免饿死系统 UI
 
+## 扩展（Extensions）安装
+
+扩展机制与 PC 完全一致：SillyTavern 内置 isomorphic-git 安装第三方扩展，
+不依赖系统 git。唯一差异是**网络**：
+
+- 扩展面板的在线列表直连 GitHub，国内移动网络下大概率加载失败
+- 用「Install from GIT URL」手动安装时，**在扩展的 GitHub 地址前加加速前缀**：
+
+  ```
+  https://ghfast.top/https://github.com/<作者>/<扩展仓库>
+  ```
+
+- 服务端插件（server plugins）依赖 npm，内置环境已预配 npmmirror 镜像源
+- 个别依赖原生二进制或外部 CDN 的扩展可能不可用，与 PC 浏览器端行为一致
+
 ## 从源码构建
 
 前提：JDK 17、Gradle 8.9、Android SDK（platform 35 / build-tools 35.0.0）、Python 3.10+（仅标准库）、Node.js（预装 ST 依赖用）。

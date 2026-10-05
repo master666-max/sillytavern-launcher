@@ -105,6 +105,8 @@ public final class RuntimeProvision {
         env.put("LANG", "C.UTF-8");
         // zygote seccomp (targetSdk 28) denies renameat2; shim it for node
         env.put("NODE_OPTIONS", "--require /opt/st/rename-fix.cjs");
+        // server plugins installed on-device hit the npm mirror
+        env.put("NPM_CONFIG_REGISTRY", "https://registry.npmmirror.com");
         return env;
     }
 }
