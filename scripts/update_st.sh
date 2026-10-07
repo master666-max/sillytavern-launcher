@@ -32,6 +32,9 @@ npm install --omit=dev --no-audit --no-fund --registry=https://registry.npmmirro
 cd "$REPO"
 python pipeline/clean_node_modules.py assets-src/SillyTavern-new/node_modules --prune
 
+echo "═══ 2.5/7 应用性能补丁（流式渲染节流）═══"
+STL_ST_DIR="$REPO/assets-src/SillyTavern-new" python "$REPO/scripts/patch_st.py"
+
 echo "═══ 3/7 预编译前端 ═══"
 echo "注意: webpack cache 含绝对路径，仅在 Linux 且位于 /opt/st 编译才能让手机端命中。"
 echo "Windows 本机编译仅为语法验证（手机首启仍会冷编译）；路径精确预烘焙请用: gh workflow run auto-build.yml -f force=true"
