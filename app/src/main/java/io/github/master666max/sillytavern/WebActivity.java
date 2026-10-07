@@ -114,6 +114,26 @@ public class WebActivity extends Activity {
     }
 
     @Override
+    protected void onPause() {
+        super.onPause();
+        // Backgrounded: stop Chromium timers and rendering so the ST UI costs
+        // nothing while the user is elsewhere (server keeps running).
+        if (webView != null) {
+            webView.onPause();
+            webView.pauseTimers();
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (webView != null) {
+            webView.resumeTimers();
+            webView.onResume();
+        }
+    }
+
+    @Override
     public void onBackPressed() {
         if (webView.canGoBack()) {
             webView.goBack();

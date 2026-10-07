@@ -124,12 +124,19 @@ public final class RuntimeProvision {
         return node.isFile() && node.canExecute();
     }
 
-    /** Pure builder for the no-proot launch: node runs directly on bionic. */
-    public static String[] bionicCommand(File rootfsDir, File bionicDir) {
-        return new String[]{
-                new File(bionicDir, "bin/node").getAbsolutePath(),
-                new File(new File(rootfsDir, "opt/st"), "server.js").getAbsolutePath(),
-        };
+    /** Pure builder for the no-proot launch: node runs directly on bionic.
+     *  nicePath (may be null) lowers scheduler priority so a heavy save or
+     *  WI scan on a weak device never starves the UI thread into an ANR. */
+    public static String[] bionicCommand(File rootfsDir, File bionicDir, String nicePath) {
+        java.util.List<String> cmd = new java.util.ArrayList<>();
+        if (nicePath != null) {
+            cmd.add(nicePath);
+            cmd.add("-n");
+            cmd.add("10");
+        }
+        cmd.add(new File(bionicDir, "bin/node").getAbsolutePath());
+        cmd.add(new File(new File(rootfsDir, "opt/st"), "server.js").getAbsolutePath());
+        return cmd.toArray(new String[0]);
     }
 
     /** Pure builder, unit-testable without an Android device. */

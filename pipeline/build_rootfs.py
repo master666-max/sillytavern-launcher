@@ -143,8 +143,10 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--assets-src", default="assets-src")
     ap.add_argument("--bionic", help="termux-node runtime tree to embed at /opt/bionic")
+    ap.add_argument("--bionic-only", action="store_true",
+                    help="bionic payload only: drop the Debian base + glibc node")
     args = ap.parse_args()
-    raise SystemExit(build(args.abi, args.out, args.assets_src, args.bionic))
+    raise SystemExit(build(args.abi, args.out, args.assets_src, args.bionic, args.bionic_only))
 
 
 def _st_version(assets_src):
@@ -153,7 +155,7 @@ def _st_version(assets_src):
         return json.load(f).get("version", "0.0.0")
 
 
-def build(abi, out_path, assets_src, bionic_dir=None):
+def build(abi, out_path, assets_src, bionic_dir=None, bionic_only=False):
     try:
         from pipeline.sources import source_paths
     except ImportError:  # run as a plain script: pipeline/ is on sys.path
@@ -183,15 +185,16 @@ def build(abi, out_path, assets_src, bionic_dir=None):
                 return True
         return False
 
-    merger.add_tarball(s["rootfs"], skip=skip_debian)  # Debian base -> /
+    merger.add_tarball(s["rootfs"], skip=skip_debian) if not bionic_only else None
     # DNS: on the x86_64 emulator only 10.0.2.3 (its built-in proxy) resolves;
     # on real phones public resolvers are reachable but 10.0.2.3 doesn't exist.
     if abi == "x86_64":
         resolv = "nameserver 10.0.2.3\nnameserver 223.5.5.5\nnameserver 119.29.29.29\n"
     else:
         resolv = "nameserver 223.5.5.5\nnameserver 119.29.29.29\nnameserver 10.0.2.3\n"
-    merger.add_bytes("etc/resolv.conf", resolv.encode(), mode=0o644)
-    merger.add_tarball(s["node"], strip_components=1, prefix="usr/local", skip=skip_node)
+    if not bionic_only:
+        merger.add_bytes("etc/resolv.conf", resolv.encode(), mode=0o644)
+        merger.add_tarball(s["node"], strip_components=1, prefix="usr/local", skip=skip_node)
     merger.add_tree(os.path.join(assets_src, "SillyTavern"), "opt/st")
     # Pre-bundled user extensions: ST's data root is /opt/st/data (its cwd),
     # and ensurePublicDirectoriesExist() fills in the rest of default-user on

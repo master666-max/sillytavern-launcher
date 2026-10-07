@@ -97,7 +97,10 @@ public class NodeService extends Service {
         Map<String, String> env;
         if (RuntimeProvision.bionicAvailable(this)) {
             File bionic = RuntimeProvision.bionicDir(this);
-            pb.command(RuntimeProvision.bionicCommand(rootfs, bionic));
+            // toybox nice exists on API 29+; guard for older devices
+            File nice = new File("/system/bin/nice");
+            pb.command(RuntimeProvision.bionicCommand(rootfs, bionic,
+                    nice.exists() ? nice.getAbsolutePath() : null));
             pb.directory(new File(rootfs, "opt/st"));
             env = RuntimeProvision.bionicEnv(rootfs, bionic, getCacheDir());
             android.util.Log.i("ST-Node", "launching with bionic runtime (no proot)");

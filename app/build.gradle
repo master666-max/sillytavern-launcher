@@ -12,8 +12,8 @@ android {
         // targetSdk stays 28 (same as Termux): keeps private dirs executable,
         // which the proot+node runtime requires.
         targetSdk 28
-        versionCode 5
-        versionName "1.1.1"
+        versionCode 6
+        versionName "1.2.0"
     }
 
     androidResources {
