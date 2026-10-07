@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">酒馆</string>
+    <string name="app_name">酒馆安卓移植版</string>
     <string name="extracting">正在准备酒馆环境（仅首次，约几分钟）</string>
     <string name="starting">启动中…</string>
     <string name="launch">启动酒馆</string>

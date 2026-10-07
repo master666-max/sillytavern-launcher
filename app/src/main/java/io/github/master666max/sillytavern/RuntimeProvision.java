@@ -97,7 +97,10 @@ public final class RuntimeProvision {
         env.put("PROOT_LOADER", new File(runtimeDir, "loader").getAbsolutePath());
         env.put("PROOT_LOADER_32", new File(runtimeDir, "loader32").getAbsolutePath());
         env.put("PROOT_TMP_DIR", cacheDir.getAbsolutePath());
-        env.put("PROOT_NO_SECCOMP", "1");
+        // PROOT_NO_SECCOMP is deliberately NOT set: proot's seccomp fast path
+        // lets non-path syscalls skip the ptrace stop entirely, which matters
+        // a lot for the chat-save I/O chain. If a device rejects filter
+        // installation proot logs a warning and still runs.
         env.put("LD_LIBRARY_PATH", runtimeDir.getAbsolutePath());
         env.put("HOME", "/opt/st");
         env.put("TMPDIR", cacheDir.getAbsolutePath());

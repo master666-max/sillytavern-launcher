@@ -57,7 +57,7 @@ public class MainActivity extends Activity {
         launchBtn = findViewById(R.id.launch_btn);
         Button resetBtn = findViewById(R.id.reset_btn);
 
-        envStatus.setText(getString(R.string.env_ready, RootfsInstaller.ROOTFS_VERSION));
+        envStatus.setText(getString(R.string.env_ready, RootfsInstaller.bundledVersion(this)));
         launchBtn.setOnClickListener(v -> startTavern());
         resetBtn.setOnClickListener(v -> confirmReset());
 
@@ -88,6 +88,10 @@ public class MainActivity extends Activity {
         mainContainer.setVisibility(View.VISIBLE);
         launchBtn.setText(R.string.launch);
         launching = false;
+        if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            // headless emulator testing: adb input injection is flaky
+            new Handler(Looper.getMainLooper()).postDelayed(this::startTavern, 1500);
+        }
     }
 
     private void startExtraction() {

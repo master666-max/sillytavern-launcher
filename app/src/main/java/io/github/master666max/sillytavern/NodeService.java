@@ -33,9 +33,11 @@ public class NodeService extends Service {
 
     private static final String CHANNEL_ID = "st_service";
     private static final int NOTIF_ID = 1;
-    // First start compiles the ST frontend: 8+ min on weak devices.
+    // First start compiles the ST frontend: 8+ min on weak devices (but the
+    // bundled rootfs ships with a prebuilt webpack cache, so this is rare).
     private static final long READY_TIMEOUT_MS = 900_000;
-    private static final long POLL_INTERVAL_MS = 800;
+    private static final long POLL_INTERVAL_MS = 1500;
+    private static final long WATCHDOG_INTERVAL_MS = 60_000;
 
     private Process process;
     private Thread waiter;
@@ -60,14 +62,18 @@ public class NodeService extends Service {
     }
 
     private void startServer() {
+        android.util.Log.i("ST-Node", "startServer begin");
         try {
             RuntimeProvision.provision(this);
         } catch (IOException e) {
+            android.util.Log.e("ST-Node", "provision failed", e);
             broadcast(ACTION_FAILED, "运行时初始化失败: " + e.getMessage());
             stopSelf();
             return;
         }
+        android.util.Log.i("ST-Node", "provision done, launching child");
         Process proc = launchChild();
+        android.util.Log.i("ST-Node", "launchChild -> " + (proc != null ? "started" : "null"));
         if (proc == null) {
             broadcast(ACTION_FAILED, "无法启动内置环境");
             stopSelf();
@@ -94,8 +100,11 @@ public class NodeService extends Service {
         pb.redirectOutput(ProcessBuilder.Redirect.appendTo(log));
         pb.environment().putAll(env);
         try {
-            return pb.start();
+            Process p = pb.start();
+            android.util.Log.i("ST-Node", "child started");
+            return p;
         } catch (IOException e) {
+            android.util.Log.e("ST-Node", "pb.start failed", e);
             return null;
         }
     }
@@ -146,7 +155,7 @@ public class NodeService extends Service {
             int restarts = 0;
             try {
                 while (restarts < 5) {
-                    Thread.sleep(30_000);
+                    Thread.sleep(WATCHDOG_INTERVAL_MS);
                     if (process == null) {
                         return; // stopped by user
                     }

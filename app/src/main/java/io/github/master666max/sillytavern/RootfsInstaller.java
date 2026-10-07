@@ -15,8 +15,7 @@ import java.util.zip.GZIPInputStream;
  */
 public final class RootfsInstaller {
 
-    public static final String ROOTFS_VERSION = "1.19.0-1";
-    private static final String VERSION_FILE = ".st-version";
+    public static final String VERSION_FILE = ".st-version";
 
     public interface Progress {
         /** @param entries extracted entry count so far
@@ -31,16 +30,51 @@ public final class RootfsInstaller {
         return new File(ctx.getFilesDir(), "rootfs");
     }
 
+    /**
+     * Expected ST version lives in assets/st-version.txt, written by the
+     * build pipeline from SillyTavern's package.json — bumping ST never
+     * touches Java code.
+     */
+    /** The bundled ST version, for UI display. */
+    public static String bundledVersion(Context ctx) {
+        try {
+            return expectedVersion(ctx);
+        } catch (IOException e) {
+            return "?";
+        }
+    }
+
+    private static String expectedVersion(Context ctx) throws IOException {
+        try (InputStream in = ctx.getAssets().open("st-version.txt")) {
+            java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
+            byte[] b = new byte[64];
+            int n;
+            while ((n = in.read(b)) > 0) {
+                buf.write(b, 0, n);
+            }
+            return buf.toString("UTF-8").trim();
+        }
+    }
+
     public static boolean isInstalled(Context ctx) {
+        String expected;
+        try {
+            expected = expectedVersion(ctx);
+        } catch (IOException e) {
+            return false;
+        }
+        if (expected.isEmpty()) {
+            return false;
+        }
         File marker = new File(rootfsDir(ctx), VERSION_FILE);
         if (!marker.isFile()) {
             return false;
         }
         try (InputStream in = new java.io.FileInputStream(marker)) {
-            byte[] buf = new byte[32];
+            byte[] buf = new byte[64];
             int n = in.read(buf);
             String v = n > 0 ? new String(buf, 0, n).trim() : "";
-            return ROOTFS_VERSION.equals(v);
+            return expected.equals(v);
         } catch (IOException e) {
             return false;
         }
@@ -102,7 +136,7 @@ public final class RootfsInstaller {
             android.util.Log.i(TAG, "stream done, entries=" + entryCount[0]);
         }
         // Marker must be written last so an interrupted extract re-runs.
-        if (!writeMarker(new File(rootfs, VERSION_FILE))) {
+        if (!writeMarker(new File(rootfs, VERSION_FILE), expectedVersion(ctx))) {
             throw new IOException("cannot write version marker");
         }
     }
@@ -197,9 +231,9 @@ public final class RootfsInstaller {
         }
     }
 
-    private static boolean writeMarker(File marker) throws IOException {
+    private static boolean writeMarker(File marker, String version) throws IOException {
         try (FileOutputStream out = new FileOutputStream(marker)) {
-            out.write(ROOTFS_VERSION.getBytes("UTF-8"));
+            out.write((version + "\n").getBytes("UTF-8"));
         }
         return true;
     }

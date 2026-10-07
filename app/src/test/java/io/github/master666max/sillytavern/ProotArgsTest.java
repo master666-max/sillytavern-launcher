@@ -38,7 +38,8 @@ public class ProotArgsTest {
         // package differs, so PROOT_LOADER must point into our runtime dir.
         assertEquals(new File(runtime, "loader").getAbsolutePath(), env.get("PROOT_LOADER"));
         assertEquals(new File(runtime, "loader32").getAbsolutePath(), env.get("PROOT_LOADER_32"));
-        assertEquals("1", env.get("PROOT_NO_SECCOMP"));
+        // seccomp fast path stays enabled for performance
+        assertTrue(!env.containsKey("PROOT_NO_SECCOMP"));
         assertEquals(cache.getAbsolutePath(), env.get("PROOT_TMP_DIR"));
         assertEquals(runtime.getAbsolutePath(), env.get("LD_LIBRARY_PATH"));
         assertEquals("/opt/st", env.get("HOME"));

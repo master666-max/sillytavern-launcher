@@ -6,6 +6,7 @@ writes a single GNU-format tar that the Android shell can stream-extract.
 import argparse
 import copy
 import io
+import json
 import os
 import tarfile
 
@@ -136,6 +137,12 @@ def main():
     raise SystemExit(build(args.abi, args.out, args.assets_src))
 
 
+def _st_version(assets_src):
+    """Read the SillyTavern version from its package.json (single source of truth)."""
+    with open(os.path.join(assets_src, "SillyTavern", "package.json"), "r", encoding="utf-8") as f:
+        return json.load(f).get("version", "0.0.0")
+
+
 def build(abi, out_path, assets_src):
     try:
         from pipeline.sources import source_paths
@@ -143,6 +150,13 @@ def build(abi, out_path, assets_src):
         from sources import source_paths
 
     s = source_paths(abi)
+    st_version = _st_version(assets_src)
+    # Runtime source of truth: RootfsInstaller compares this against the
+    # marker inside the extracted rootfs to decide on re-extraction.
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(repo_root, "app", "src", "main", "assets",
+                           "st-version.txt"), "w") as f:
+        f.write(st_version)
     merger = TarMerger(out_path)
 
     def skip_node(ti):
@@ -169,12 +183,23 @@ def build(abi, out_path, assets_src):
     merger.add_bytes("etc/resolv.conf", resolv.encode(), mode=0o644)
     merger.add_tarball(s["node"], strip_components=1, prefix="usr/local", skip=skip_node)
     merger.add_tree(os.path.join(assets_src, "SillyTavern"), "opt/st")
+    # Pre-bundled user extensions: ST's data root is /opt/st/data (its cwd),
+    # and ensurePublicDirectoriesExist() fills in the rest of default-user on
+    # first boot, so a partial tree is fine.
+    extensions_src = os.path.join(assets_src, "extensions")
+    if os.path.isdir(extensions_src):
+        for entry in sorted(os.listdir(extensions_src)):
+            ext_dir = os.path.join(extensions_src, entry)
+            if os.path.isdir(ext_dir) and os.path.isfile(os.path.join(ext_dir, "manifest.json")):
+                name = entry.removesuffix("-main").removesuffix("-master")
+                merger.add_tree(ext_dir, "opt/st/data/default-user/extensions/" + name)
+                print(f"bundled extension: {name}")
     merger.add_bytes(
         "opt/st/config.yaml",
         _st_config().encode("utf-8"),
         mode=0o644,
     )
-    merger.add_bytes("opt/st/.st-version", b"1.19.0\n", mode=0o644)
+    merger.add_bytes("opt/st/.st-version", (_st_version(assets_src) + "\n").encode(), mode=0o644)
     merger.close()
     return 0
 
@@ -189,6 +214,14 @@ enableCorsProxy: false
 protocolAllowedHosts: ["127.0.0.1", "localhost"]
 browserLaunch:
   enabled: false
+# Performance: every chat save triggers a full-file atomic write; the default
+# 10s full-chat backup doubles that I/O and is brutal over proot's ptrace tax
+# and flash storage. Disabled on purpose - use ST's manual export instead.
+backups:
+  chat:
+    enabled: false
+  common:
+    numberOfBackups: 10
 """
 
 
