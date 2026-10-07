@@ -27,14 +27,14 @@ public class MainActivity extends Activity {
 
     private final Handler ui = new Handler(Looper.getMainLooper());
     private boolean launching;
+    private boolean webOpened;
 
     private final BroadcastReceiver serviceReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
             if (NodeService.ACTION_READY.equals(action)) {
-                launching = false;
-                startActivity(new Intent(MainActivity.this, WebActivity.class));
+                openWeb();
             } else if (NodeService.ACTION_FAILED.equals(action)) {
                 launching = false;
                 launchBtn.setText(R.string.launch);
@@ -71,6 +71,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        webOpened = false;
         IntentFilter f = new IntentFilter();
         f.addAction(NodeService.ACTION_READY);
         f.addAction(NodeService.ACTION_FAILED);
@@ -83,15 +84,25 @@ public class MainActivity extends Activity {
         unregisterReceiver(serviceReceiver);
     }
 
+    /** Jump into the WebView once, however readiness was detected. */
+    private void openWeb() {
+        if (webOpened) {
+            return;
+        }
+        webOpened = true;
+        launching = false;
+        startActivity(new Intent(this, WebActivity.class));
+    }
+
     private void showMain() {
         extractContainer.setVisibility(View.GONE);
         mainContainer.setVisibility(View.VISIBLE);
         launchBtn.setText(R.string.launch);
         launching = false;
-        if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
-            // headless emulator testing: adb input injection is flaky
-            new Handler(Looper.getMainLooper()).postDelayed(this::startTavern, 1500);
-        }
+        // Warm path: opening the app means the user wants ST — start the
+        // service immediately; the ready broadcast jumps into the WebView.
+        // The button stays as manual retry.
+        new Handler(Looper.getMainLooper()).postDelayed(this::startTavern, 800);
     }
 
     private void startExtraction() {
@@ -127,6 +138,32 @@ public class MainActivity extends Activity {
         launchBtn.setText(R.string.starting);
         Intent i = new Intent(this, NodeService.class).setAction(NodeService.ACTION_START);
         startForegroundService(i);
+        // Warm path: an already-running service never re-broadcasts READY,
+        // so probe the port directly and jump as soon as it answers.
+        new Thread(() -> {
+            final long deadline = System.currentTimeMillis() + 60_000;
+            while (System.currentTimeMillis() < deadline) {
+                try {
+                    java.net.HttpURLConnection conn = (java.net.HttpURLConnection) new java.net.URL(
+                            "http://127.0.0.1:" + RuntimeProvision.ST_PORT + "/").openConnection();
+                    conn.setConnectTimeout(1000);
+                    conn.setReadTimeout(1000);
+                    if (conn.getResponseCode() > 0) {
+                        conn.disconnect();
+                        ui.post(this::openWeb);
+                        return;
+                    }
+                    conn.disconnect();
+                } catch (IOException ignored) {
+                    // not up yet
+                }
+                try {
+                    Thread.sleep(700);
+                } catch (InterruptedException e) {
+                    return;
+                }
+            }
+        }, "st-open-poll").start();
     }
 
     private void confirmReset() {

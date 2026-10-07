@@ -161,35 +161,30 @@ public class NodeService extends Service {
         t.start();
     }
 
-    /** After READY: if the server dies (OOM, ANR-kill), relaunch it (max 5x). */
+    /** After READY: if the server process dies (OOM, ANR-kill), relaunch it
+     *  (max 5x). Liveness is a cheap process check — the HTTP probe woke the
+     *  event loop every 30s for nothing. */
     private void startWatchdog() {
         Thread t = new Thread(() -> {
             int restarts = 0;
             try {
                 while (restarts < 5) {
                     Thread.sleep(WATCHDOG_INTERVAL_MS);
-                    if (process == null) {
+                    Process proc = process;
+                    if (proc == null) {
                         return; // stopped by user
                     }
-                    if (isServerUp()) {
+                    if (proc.isAlive()) {
                         continue;
                     }
-                    Thread.sleep(5_000);
-                    if (process == null) {
-                        return;
-                    }
-                    if (isServerUp()) {
-                        continue;
-                    }
-                    process.destroy();
-                    Process proc = launchChild();
-                    if (proc == null) {
+                    Process relaunched = launchChild();
+                    if (relaunched == null) {
                         main.post(() -> broadcast(ACTION_FAILED, "酒馆进程掉线且重启失败"));
                         return;
                     }
-                    process = proc;
+                    process = relaunched;
                     restarts++;
-                    trackExit(proc);
+                    trackExit(relaunched);
                     pollReady();
                 }
             } catch (InterruptedException ignored) {

@@ -144,6 +144,11 @@ public final class RuntimeProvision {
         // same renameat2/fsync shim, now addressed by its real path
         env.put("NODE_OPTIONS", "--require " + new File(st, "rename-fix.cjs").getAbsolutePath());
         env.put("NPM_CONFIG_REGISTRY", "https://registry.npmmirror.com");
+        // V8 compile cache: ST's server module graph is re-parsed on every
+        // boot; the on-disk cache (populated on first run) skips that work.
+        env.put("NODE_COMPILE_CACHE", new File(cacheDir, "v8-compile-cache").getAbsolutePath());
+        // the frontend bundle ships prebuilt; skip the per-boot webpack run
+        env.put("ST_SKIP_WEBPACK", "1");
         return env;
     }
 }

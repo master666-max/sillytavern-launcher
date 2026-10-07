@@ -9,14 +9,20 @@ onProgressStreaming re-runs the full markdown pipeline and replaces the whole
 message innerHTML on every SSE chunk: O(n^2) over one reply. Throttle the
 expensive tail (format + DOM) to ~150ms; chat state still updates on every
 chunk, and isFinal always renders fully.
+
+Patch 2 — skip startup webpack revalidation when the bundle was prebuilt
+(server-main.js runs runWebpackCompiler on every boot; with the bundle and
+cache shipped in the rootfs the ~3s + CPU spike per start is pure waste).
+Gated by env ST_SKIP_WEBPACK=1 and an existence check on the compiled bundle,
+so a missing/cleaned data dir still falls back to compiling.
 """
 import os
 import sys
 from pathlib import Path
 
-MARKER = "__stlLastRenderAt"
-ANCHOR = "            const formattedText = messageFormatting(\n"
-INJECT = (
+MARKER1 = "__stlLastRenderAt"
+ANCHOR1 = "            const formattedText = messageFormatting(\n"
+INJECT1 = (
     "            // stlauncher-perf: throttle streaming markdown re-render (150ms);\n"
     "            // state updates above stay per-chunk, isFinal always renders fully.\n"
     "            if (!isFinal) {\n"
@@ -28,27 +34,57 @@ INJECT = (
     "            }\n"
 )
 
+MARKER2 = "__stlPrebuiltMissing"
+ANCHOR2 = (
+    "    // Wait for frontend libs to compile\n"
+    "    await webpackMiddleware.runWebpackCompiler({ pruneCache: true });\n"
+)
+INJECT2 = (
+    "    // stlauncher-perf: skip the startup webpack run when the prebuilt bundle\n"
+    "    // ships with the app; compile only when the bundle is actually missing.\n"
+    "    let __stlPrebuiltMissing = true;\n"
+    "    if (process.env.ST_SKIP_WEBPACK === '1') {\n"
+    "        try {\n"
+    "            const __stlConfig = (await import('../webpack.config.js')).default({});\n"
+    "            const __stlOut = path.join(__stlConfig.output.path, __stlConfig.output.filename);\n"
+    "            __stlPrebuiltMissing = !fs.existsSync(__stlOut);\n"
+    "        } catch {\n"
+    "            __stlPrebuiltMissing = true;\n"
+    "        }\n"
+    "    }\n"
+    "    if (__stlPrebuiltMissing) {\n"
+    "        // Wait for frontend libs to compile\n"
+    "        await webpackMiddleware.runWebpackCompiler({ pruneCache: true });\n"
+    "    }\n"
+)
+
+
+def apply_patch(target: Path, marker: str, anchor: str, replacement: str) -> int:
+    if not target.is_file():
+        print(f"skip: {target} not found")
+        return 0
+    text = target.read_text(encoding="utf-8")
+    if marker in text:
+        print(f"already patched: {target.name}")
+        return 0
+    if text.count(anchor) != 1:
+        print(f"ERROR: anchor found {text.count(anchor)} times in {target.name}, "
+              "expected 1 — ST source changed upstream; update patch_st.py",
+              file=sys.stderr)
+        return 1
+    target.write_text(text.replace(anchor, replacement, 1), encoding="utf-8")
+    print(f"patched: {target.name}")
+    return 0
+
 
 def main():
     repo = Path(__file__).resolve().parent.parent
     # update_st.sh targets the freshly fetched checkout via STL_ST_DIR
     st_dir = Path(os.environ.get("STL_ST_DIR", repo / "assets-src" / "SillyTavern"))
-    target = st_dir / "public" / "script.js"
-    if not target.is_file():
-        print(f"skip: {target} not found (no ST checkout)")
-        return 0
-    text = target.read_text(encoding="utf-8")
-    if MARKER in text:
-        print("already patched (idempotent skip)")
-        return 0
-    if text.count(ANCHOR) != 1:
-        print(f"ERROR: anchor found {text.count(ANCHOR)} times, expected 1 — "
-              "ST source changed upstream; update patch_st.py against the new code",
-              file=sys.stderr)
-        return 1
-    target.write_text(text.replace(ANCHOR, INJECT + ANCHOR, 1), encoding="utf-8")
-    print(f"patched: {target}")
-    return 0
+    rc = 0
+    rc |= apply_patch(st_dir / "public" / "script.js", MARKER1, ANCHOR1, INJECT1 + ANCHOR1)
+    rc |= apply_patch(st_dir / "src" / "server-main.js", MARKER2, ANCHOR2, INJECT2)
+    return rc
 
 
 if __name__ == "__main__":
