@@ -64,11 +64,14 @@ class TarMerger:
                 else:
                     self._emit(out)
 
-    def add_tree(self, src_dir, prefix, prune_dev_meta=True):
+    def add_tree(self, src_dir, prefix, prune_dev_meta=True, bin_exec=False):
         """Add a real directory tree (used for the ST checkout + node_modules).
 
         prune_dev_meta drops *.md/*.markdown/*.map files and test* dirs: dead
         weight on a production device image.
+        bin_exec forces mode 0755 on files under a bin/ directory — Windows
+        hosts cannot represent the Unix exec bit in stat(), so staging a
+        runtime tree there would otherwise arrive non-executable.
         """
         src_dir = os.path.abspath(src_dir)
         base = _norm(prefix)
@@ -88,14 +91,20 @@ class TarMerger:
                 if os.path.islink(full):
                     self.add_symlink(_norm(arcname), os.readlink(full))
                 else:
-                    self.add_file(_norm(arcname), full)
+                    force = None
+                    if bin_exec and "/bin/" in "/" + arcname:
+                        force = 0o755
+                    self.add_file(_norm(arcname), full, force_mode=force)
             dirs[:] = [d for d in dirs if not os.path.islink(os.path.join(root, d))]
 
-    def add_file(self, arcname, src_path):
+    def add_file(self, arcname, src_path, force_mode=None):
         st = os.stat(src_path)
         ti = tarfile.TarInfo(arcname)
         ti.size = st.st_size
-        ti.mode = 0o755 if st.st_mode & 0o111 else 0o644
+        if force_mode is not None:
+            ti.mode = force_mode
+        else:
+            ti.mode = 0o755 if st.st_mode & 0o111 else 0o644
         ti.type = tarfile.REGTYPE
         self._normalize(ti)
         with open(src_path, "rb") as f:
@@ -133,8 +142,9 @@ def main():
     ap.add_argument("--abi", required=True, choices=["arm64-v8a", "x86_64"])
     ap.add_argument("--out", required=True)
     ap.add_argument("--assets-src", default="assets-src")
+    ap.add_argument("--bionic", help="termux-node runtime tree to embed at /opt/bionic")
     args = ap.parse_args()
-    raise SystemExit(build(args.abi, args.out, args.assets_src))
+    raise SystemExit(build(args.abi, args.out, args.assets_src, args.bionic))
 
 
 def _st_version(assets_src):
@@ -143,7 +153,7 @@ def _st_version(assets_src):
         return json.load(f).get("version", "0.0.0")
 
 
-def build(abi, out_path, assets_src):
+def build(abi, out_path, assets_src, bionic_dir=None):
     try:
         from pipeline.sources import source_paths
     except ImportError:  # run as a plain script: pipeline/ is on sys.path
@@ -200,6 +210,11 @@ def build(abi, out_path, assets_src):
         mode=0o644,
     )
     merger.add_bytes("opt/st/.st-version", (_st_version(assets_src) + "\n").encode(), mode=0o644)
+    # Experimental bionic runtime (v1.2 track): embed a termux-node runtime
+    # tree (bin/ + lib/) at /opt/bionic for no-proot experiments.
+    if bionic_dir and os.path.isdir(bionic_dir):
+        merger.add_tree(bionic_dir, "opt/bionic", prune_dev_meta=False, bin_exec=True)
+        print(f"embedded bionic runtime from {bionic_dir}")
     merger.close()
     return 0
 
@@ -214,6 +229,10 @@ enableCorsProxy: false
 protocolAllowedHosts: ["127.0.0.1", "localhost"]
 browserLaunch:
   enabled: false
+# No system git in the bundled runtime (same as PC-without-git users):
+# always use the built-in isomorphic-git backend, skip the system-git probe.
+git:
+  backend: builtin
 # Performance: every chat save triggers a full-file atomic write; the default
 # 10s full-chat backup doubles that I/O and is brutal over proot's ptrace tax
 # and flash storage. Disabled on purpose - use ST's manual export instead.

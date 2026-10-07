@@ -112,4 +112,38 @@ public final class RuntimeProvision {
         env.put("NPM_CONFIG_REGISTRY", "https://registry.npmmirror.com");
         return env;
     }
+
+    // ── v1.2 experimental track: bionic (termux-node) runtime, no proot ──
+
+    public static File bionicDir(Context ctx) {
+        return new File(rootfsDir(ctx), "opt/bionic");
+    }
+
+    public static boolean bionicAvailable(Context ctx) {
+        File node = new File(bionicDir(ctx), "bin/node");
+        return node.isFile() && node.canExecute();
+    }
+
+    /** Pure builder for the no-proot launch: node runs directly on bionic. */
+    public static String[] bionicCommand(File rootfsDir, File bionicDir) {
+        return new String[]{
+                new File(bionicDir, "bin/node").getAbsolutePath(),
+                new File(new File(rootfsDir, "opt/st"), "server.js").getAbsolutePath(),
+        };
+    }
+
+    /** Pure builder, unit-testable without an Android device. */
+    public static Map<String, String> bionicEnv(File rootfsDir, File bionicDir, File cacheDir) {
+        Map<String, String> env = new HashMap<>();
+        File st = new File(rootfsDir, "opt/st");
+        env.put("LD_LIBRARY_PATH", new File(bionicDir, "lib").getAbsolutePath());
+        env.put("PATH", new File(bionicDir, "bin").getAbsolutePath() + ":/system/bin");
+        env.put("HOME", st.getAbsolutePath());
+        env.put("TMPDIR", cacheDir.getAbsolutePath());
+        env.put("LANG", "C.UTF-8");
+        // same renameat2/fsync shim, now addressed by its real path
+        env.put("NODE_OPTIONS", "--require " + new File(st, "rename-fix.cjs").getAbsolutePath());
+        env.put("NPM_CONFIG_REGISTRY", "https://registry.npmmirror.com");
+        return env;
+    }
 }

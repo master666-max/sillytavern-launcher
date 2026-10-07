@@ -84,18 +84,30 @@ public class NodeService extends Service {
         pollReady();
     }
 
-    /** argv-list launch: no shell, no string concatenation of user data. */
+    /** argv-list launch: no shell, no string concatenation of user data.
+     *  Prefers the bionic runtime (/opt/bionic) when present: node executes
+     *  directly, no proot and no ptrace tax. Falls back to proot otherwise. */
     private Process launchChild() {
-        File runtime = RuntimeProvision.runtimeDir(this);
-        String[] cmd = RuntimeProvision.prootCommand(RuntimeProvision.rootfsDir(this), runtime);
-        Map<String, String> env = RuntimeProvision.prootEnv(runtime, getCacheDir());
+        File rootfs = RuntimeProvision.rootfsDir(this);
         File log = RuntimeProvision.logFile(this);
         if (log.exists()) {
             log.delete();
         }
         ProcessBuilder pb = new ProcessBuilder();
-        pb.command(cmd);
-        pb.directory(getFilesDir());
+        Map<String, String> env;
+        if (RuntimeProvision.bionicAvailable(this)) {
+            File bionic = RuntimeProvision.bionicDir(this);
+            pb.command(RuntimeProvision.bionicCommand(rootfs, bionic));
+            pb.directory(new File(rootfs, "opt/st"));
+            env = RuntimeProvision.bionicEnv(rootfs, bionic, getCacheDir());
+            android.util.Log.i("ST-Node", "launching with bionic runtime (no proot)");
+        } else {
+            File runtime = RuntimeProvision.runtimeDir(this);
+            pb.command(RuntimeProvision.prootCommand(rootfs, runtime));
+            pb.directory(getFilesDir());
+            env = RuntimeProvision.prootEnv(runtime, getCacheDir());
+            android.util.Log.i("ST-Node", "launching with proot runtime");
+        }
         pb.redirectErrorStream(true);
         pb.redirectOutput(ProcessBuilder.Redirect.appendTo(log));
         pb.environment().putAll(env);
