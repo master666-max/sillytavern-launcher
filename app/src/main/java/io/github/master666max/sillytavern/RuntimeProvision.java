@@ -39,8 +39,48 @@ public final class RuntimeProvision {
     }
 
     /** Extracts runtime binaries from assets/runtime/* on first run. */
-    public static void provision(Context ctx) throws IOException {
-        File dir = runtimeDir(ctx);
+    /**
+     * User-editable config.yaml lives in the external files dir (reachable
+     * with any file manager). On first run the factory config is exposed
+     * there as a template; afterwards an existing external file wins on every
+     * start, so the device gets the same config control a PC install has.
+     * Fail-open: any I/O problem keeps the factory config in place.
+     */
+    public static void syncExternalConfig(Context ctx) {
+        try {
+            File ext = ctx.getExternalFilesDir(null);
+            if (ext == null) {
+                return;
+            }
+            File user = new File(ext, "config.yaml");
+            File factory = new File(new File(rootfsDir(ctx), "opt/st"), "config.yaml");
+            if (!factory.isFile()) {
+                return; // not extracted yet
+            }
+            if (!user.isFile()) {
+                copyFile(factory, user);
+                android.util.Log.i("ST-Node", "config template exposed: " + user);
+                return;
+            }
+            copyFile(user, factory);
+            android.util.Log.i("ST-Node", "user config applied from " + user);
+        } catch (IOException e) {
+            android.util.Log.w("ST-Node", "config sync failed (factory kept)", e);
+        }
+    }
+
+    private static void copyFile(File src, File dst) throws IOException {
+        try (InputStream in = new java.io.FileInputStream(src);
+                OutputStream out = new java.io.FileOutputStream(dst)) {
+            byte[] buf = new byte[16384];
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                out.write(buf, 0, n);
+            }
+        }
+    }
+
+    public static void provision(Context ctx) throws IOException {        File dir = runtimeDir(ctx);
         if (!dir.isDirectory() && !dir.mkdirs() && !dir.isDirectory()) {
             throw new IOException("cannot create runtime dir: " + dir);
         }
@@ -56,6 +96,10 @@ public final class RuntimeProvision {
                 while ((n = in.read(buf)) > 0) {
                     out.write(buf, 0, n);
                 }
+            } catch (java.io.FileNotFoundException e) {
+                // bionic-only payloads legitimately ship no proot runtime
+                android.util.Log.i("ST-Node", "runtime asset absent: " + asset);
+                continue;
             }
             if (!target.setExecutable(true, false) || !target.setReadable(true, false)
                     || !target.setWritable(true, false)) {

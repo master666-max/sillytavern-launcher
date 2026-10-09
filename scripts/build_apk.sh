@@ -29,6 +29,10 @@ done
 
 ASSETS="$REPO/app/src/main/assets"
 mkdir -p "$ASSETS/runtime"
+# sanity: v1.2+ payloads must carry the bionic runtime, otherwise the app
+# can only fall back to proot (which the bionic-only payloads omit)
+tar tzf "$ROOTFS_TGZ" 2>/dev/null | grep -q "opt/bionic/bin/node" || {
+  echo "rootfs lacks opt/bionic payload - assemble with --bionic/--bionic-only" >&2; exit 1; }
 # .stgz instead of .tar.gz: aapt2 mangles ".gz"-suffixed assets (renames +
 # decompresses), so ship the archive under a custom extension.
 cp "$ROOTFS_TGZ" "$ASSETS/rootfs.stgz"

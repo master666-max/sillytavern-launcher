@@ -65,6 +65,8 @@ public class NodeService extends Service {
         android.util.Log.i("ST-Node", "startServer begin");
         try {
             RuntimeProvision.provision(this);
+            // user-editable config from the external dir wins over factory
+            RuntimeProvision.syncExternalConfig(this);
         } catch (IOException e) {
             android.util.Log.e("ST-Node", "provision failed", e);
             broadcast(ACTION_FAILED, "运行时初始化失败: " + e.getMessage());
