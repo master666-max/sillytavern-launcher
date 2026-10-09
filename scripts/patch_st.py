@@ -58,6 +58,18 @@ INJECT2 = (
     "    }\n"
 )
 
+# Patch 3 - default UI language to Simplified Chinese. The stock chain is
+# override(localStorage) || navigator.language || 'en'; on this Android port
+# we drop navigator.language so the default is zh-cn regardless of the
+# device locale, while an explicit user choice in UI settings (localStorage
+# override) still wins.
+MARKER3 = "stlauncher: default locale zh-cn"
+ANCHOR3 = "const localeFile = String(overrideLanguage || navigator.language || navigator.userLanguage || 'en').toLowerCase();\n"
+INJECT3 = (
+    "// stlauncher: default locale zh-cn (user override still wins)\n"
+    "const localeFile = String(overrideLanguage || 'zh-cn').toLowerCase();\n"
+)
+
 
 def apply_patch(target: Path, marker: str, anchor: str, replacement: str) -> int:
     if not target.is_file():
@@ -84,6 +96,7 @@ def main():
     rc = 0
     rc |= apply_patch(st_dir / "public" / "script.js", MARKER1, ANCHOR1, INJECT1 + ANCHOR1)
     rc |= apply_patch(st_dir / "src" / "server-main.js", MARKER2, ANCHOR2, INJECT2)
+    rc |= apply_patch(st_dir / "public" / "scripts" / "i18n.js", MARKER3, ANCHOR3, INJECT3)
     return rc
 
 

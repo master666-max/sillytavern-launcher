@@ -164,6 +164,29 @@ def _payload_version(assets_src, bionic_dir=None):
     h = hashlib.sha256()
     h.update(_st_version(assets_src).encode())
     h.update(_st_config().encode())
+    # ST files that patches rewrite: content hash captures any patch change
+    for rel in ("public/scripts/i18n.js", "public/script.js", "src/server-main.js"):
+        fp = os.path.join(assets_src, "SillyTavern", *rel.split("/"))
+        if os.path.isfile(fp):
+            with open(fp, "rb") as f:
+                h.update(hashlib.sha256(f.read()).digest())
+    # patch/localization logic itself: updating a translation table must
+    # refresh devices even when ST and the runtime are untouched
+    scripts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts")
+    for fn in ("patch_st.py", "localize_extensions.py", "fetch_extensions.sh"):
+        fp = os.path.join(scripts_dir, fn)
+        if os.path.isfile(fp):
+            with open(fp, "rb") as f:
+                h.update(hashlib.sha256(f.read()).digest())
+    # bundled extension manifests (names/flags/localization markers)
+    ext_root = os.path.join(assets_src, "extensions")
+    if os.path.isdir(ext_root):
+        for entry in sorted(os.listdir(ext_root)):
+            fp = os.path.join(ext_root, entry, "manifest.json")
+            if os.path.isfile(fp):
+                with open(fp, "rb") as f:
+                    h.update(entry.encode())
+                    h.update(hashlib.sha256(f.read()).digest())
     if bionic_dir and os.path.isdir(bionic_dir):
         h.update(b"bionic")
         # hash every runtime file (name+size): any stub/binary change must

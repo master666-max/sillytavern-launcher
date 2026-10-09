@@ -44,6 +44,10 @@ cp "$DL/$S"  "$ASSETS/runtime/libandroid-shmem.so"
 
 export JAVA_HOME="$JDK"
 cd "$REPO"
+# Gradle's incremental packaging can silently keep a stale rootfs.stgz /
+# st-version.txt inside the APK (seen twice in practice). Deleting the APK
+# first forces a full repackage.
+rm -f "$REPO/app/build/outputs/apk/$TYPE"/*.apk
 "$GRADLE_CMD" "assemble${TYPE^}" --console=plain --no-daemon
 
 echo "=== APK ==="

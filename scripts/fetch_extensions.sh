@@ -1,9 +1,10 @@
 #!/bin/bash
 # Ensure the bundled third-party extensions exist and are correctly marked.
-# Downloads the latest official zips into assets-src/extensions and forces
-# auto_update=false in their manifests: the bundled copies are plain folders
-# (no .git), so ST's startup auto-update would otherwise fail loudly. Users
-# who install extensions from a GIT URL keep full auto-update behavior.
+# Downloads the latest official zips into assets-src/extensions, forces
+# auto_update=false in their manifests (bundled copies are plain folders with
+# no .git, so ST's startup auto-update would fail loudly), then applies the
+# Simplified-Chinese localization table. Users who install extensions from a
+# GIT URL keep full auto-update behavior.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -18,6 +19,13 @@ REPOS=(
   "QuickPersona:SillyTavern/Extension-QuickPersona"
   "Objective:SillyTavern/Extension-Objective"
   "TypingIndicator:SillyTavern/Extension-TypingIndicator"
+  "WebSearch:SillyTavern/Extension-WebSearch"
+  "Notebook:SillyTavern/Extension-Notebook"
+  "Dice:SillyTavern/Extension-Dice"
+  "EmojiPicker:SillyTavern/Extension-EmojiPicker"
+  "Mermaid:SillyTavern/Extension-Mermaid"
+  "LaTeX:SillyTavern/Extension-LaTeX"
+  "MessageLimit:SillyTavern/Extension-MessageLimit"
 )
 
 for entry in "${REPOS[@]}"; do
@@ -40,3 +48,6 @@ for entry in "${REPOS[@]}"; do
 done
 
 echo "extensions ready: $(ls -d Extension-*/ | wc -l) dirs"
+
+echo "── applying Simplified-Chinese localization ──"
+python "$REPO/scripts/localize_extensions.py"
