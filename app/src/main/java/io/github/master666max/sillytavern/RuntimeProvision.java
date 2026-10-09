@@ -31,7 +31,11 @@ public final class RuntimeProvision {
     }
 
     public static File logFile(Context ctx) {
-        return new File(ctx.getFilesDir(), "st.log");
+        // External app dir so users can read it with any file manager
+        // (/sdcard/Android/data/<pkg>/files/st.log); fall back to internal.
+        File ext = ctx.getExternalFilesDir(null);
+        File dir = (ext != null) ? ext : ctx.getFilesDir();
+        return new File(dir, "st.log");
     }
 
     /** Extracts runtime binaries from assets/runtime/* on first run. */
@@ -119,24 +123,43 @@ public final class RuntimeProvision {
         return new File(rootfsDir(ctx), "opt/bionic");
     }
 
+    /**
+     * Hard-forces the executable bit on the bionic runtime binaries using the
+     * raw chmod syscall. File.setExecutable() can silently no-op on some OEM
+     * ROMs, and a missing exec bit surfaces as exit code 13 (EACCES).
+     */
+    public static void ensureBionicExecutable(Context ctx) {
+        File bin = new File(bionicDir(ctx), "bin");
+        File[] entries = bin.listFiles();
+        if (entries == null) {
+            return;
+        }
+        for (File f : entries) {
+            if (f.isFile()) {
+                try {
+                    android.system.Os.chmod(f.getAbsolutePath(), 0755);
+                } catch (android.system.ErrnoException e) {
+                    android.util.Log.w("ST-Node", "chmod failed: " + f + " " + e);
+                }
+            }
+        }
+        File node = new File(bin, "node");
+        android.util.Log.i("ST-Node", "bionic node executable=" + node.canExecute());
+    }
+
     public static boolean bionicAvailable(Context ctx) {
         File node = new File(bionicDir(ctx), "bin/node");
         return node.isFile() && node.canExecute();
     }
 
     /** Pure builder for the no-proot launch: node runs directly on bionic.
-     *  nicePath (may be null) lowers scheduler priority so a heavy save or
-     *  WI scan on a weak device never starves the UI thread into an ANR. */
-    public static String[] bionicCommand(File rootfsDir, File bionicDir, String nicePath) {
-        java.util.List<String> cmd = new java.util.ArrayList<>();
-        if (nicePath != null) {
-            cmd.add(nicePath);
-            cmd.add("-n");
-            cmd.add("10");
-        }
-        cmd.add(new File(bionicDir, "bin/node").getAbsolutePath());
-        cmd.add(new File(new File(rootfsDir, "opt/st"), "server.js").getAbsolutePath());
-        return cmd.toArray(new String[0]);
+     *  No wrapper process on purpose: an extra exec hop (e.g. toybox nice)
+     *  breaks under some OEM SELinux policies, surfacing as exit code 13. */
+    public static String[] bionicCommand(File rootfsDir, File bionicDir) {
+        return new String[]{
+                new File(bionicDir, "bin/node").getAbsolutePath(),
+                new File(new File(rootfsDir, "opt/st"), "server.js").getAbsolutePath(),
+        };
     }
 
     /** Pure builder, unit-testable without an Android device. */

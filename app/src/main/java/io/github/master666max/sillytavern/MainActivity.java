@@ -39,8 +39,14 @@ public class MainActivity extends Activity {
                 launching = false;
                 launchBtn.setText(R.string.launch);
                 String msg = intent.getStringExtra("message");
-                Toast.makeText(MainActivity.this,
-                        msg != null ? msg : getString(R.string.start_failed), Toast.LENGTH_LONG).show();
+                String log = intent.getStringExtra("log");
+                if (log != null && !log.isEmpty()) {
+                    showFailureDialog(msg, log);
+                } else {
+                    Toast.makeText(MainActivity.this,
+                            msg != null ? msg : getString(R.string.start_failed),
+                            Toast.LENGTH_LONG).show();
+                }
             }
         }
     };
@@ -84,9 +90,19 @@ public class MainActivity extends Activity {
         unregisterReceiver(serviceReceiver);
     }
 
+    /** Failure details on screen: users can screenshot this for support. */
+    private void showFailureDialog(String msg, String log) {
+        String body = (msg != null ? msg : getString(R.string.start_failed))
+                + "\n\n—— 环境日志（尾部）——\n" + log;
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.start_failed)
+                .setMessage(body)
+                .setPositiveButton(android.R.string.ok, null)
+                .show();
+    }
+
     /** Jump into the WebView once, however readiness was detected. */
-    private void openWeb() {
-        if (webOpened) {
+    private void openWeb() {        if (webOpened) {
             return;
         }
         webOpened = true;

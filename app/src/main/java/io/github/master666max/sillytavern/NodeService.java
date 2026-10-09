@@ -97,10 +97,10 @@ public class NodeService extends Service {
         Map<String, String> env;
         if (RuntimeProvision.bionicAvailable(this)) {
             File bionic = RuntimeProvision.bionicDir(this);
-            // toybox nice exists on API 29+; guard for older devices
-            File nice = new File("/system/bin/nice");
-            pb.command(RuntimeProvision.bionicCommand(rootfs, bionic,
-                    nice.exists() ? nice.getAbsolutePath() : null));
+            // OEM ROMs sometimes fail File.setExecutable(); force the bit via
+            // chmod so exec cannot fail with EACCES (exit code 13).
+            RuntimeProvision.ensureBionicExecutable(this);
+            pb.command(RuntimeProvision.bionicCommand(rootfs, bionic));
             pb.directory(new File(rootfs, "opt/st"));
             env = RuntimeProvision.bionicEnv(rootfs, bionic, getCacheDir());
             android.util.Log.i("ST-Node", "launching with bionic runtime (no proot)");
@@ -129,9 +129,13 @@ public class NodeService extends Service {
             try {
                 int code = proc.waitFor();
                 if (code != 0 && process == proc) {
+                    final String tail = readLogTail(RuntimeProvision.logFile(this), 2000);
                     main.post(() -> {
                         if (process == proc) {
-                            broadcast(ACTION_FAILED, "内置环境异常退出（代码 " + code + "），详见 st.log");
+                            Intent i = new Intent(ACTION_FAILED).setPackage(getPackageName());
+                            i.putExtra("message", "内置环境异常退出（代码 " + code + "）");
+                            i.putExtra("log", tail);
+                            sendBroadcast(i);
                         }
                     });
                 }
@@ -141,6 +145,20 @@ public class NodeService extends Service {
         }, "st-exit-watcher");
         waiter.setDaemon(true);
         waiter.start();
+    }
+
+    /** Last N characters of the server log, for on-screen diagnostics. */
+    private static String readLogTail(File log, int maxChars) {
+        try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(log, "r")) {
+            long len = raf.length();
+            long start = Math.max(0, len - maxChars);
+            raf.seek(start);
+            byte[] buf = new byte[(int) (len - start)];
+            raf.readFully(buf);
+            return new String(buf, "UTF-8");
+        } catch (Exception e) {
+            return "(log unavailable: " + e.getMessage() + ")";
+        }
     }
 
     private void pollReady() {
