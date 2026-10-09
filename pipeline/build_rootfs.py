@@ -236,6 +236,11 @@ browserLaunch:
 # always use the built-in isomorphic-git backend, skip the system-git probe.
 git:
   backend: builtin
+# Preinstalled extensions are plain folders (no .git), so ST's startup
+# auto-update would fail with "Extension update failed" toasts. The bundled
+# manifests also set auto_update:false; this disables the mechanism wholesale.
+extensions:
+  autoUpdate: false
 # Performance: every chat save triggers a full-file atomic write; the default
 # 10s full-chat backup doubles that I/O and is brutal over proot's ptrace tax
 # and flash storage. Disabled on purpose - use ST's manual export instead.
