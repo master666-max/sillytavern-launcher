@@ -124,7 +124,13 @@ def extract_deb(deb_path, out_dir):
                 continue
             rest = rel[len(pfx):]
             top = rest.split("/")[0]
-            if top not in ("bin", "lib"):
+            # Keep bin/, lib/ and the openssl config assets. Termux's openssl
+            # bakes its default cnf path to $PREFIX/etc/tls/openssl.cnf; when
+            # another Termux install exists on the device that path is EACCES
+            # (not ENOENT) and node dies at startup — ship our own copy and
+            # point OPENSSL_CONF at it.
+            if top not in ("bin", "lib") and rest not in (
+                    "etc/tls/openssl.cnf", "etc/tls/cert.pem"):
                 continue
             # tar-slip guard: the member must stay inside out_dir
             target = (out_dir / rest).resolve()

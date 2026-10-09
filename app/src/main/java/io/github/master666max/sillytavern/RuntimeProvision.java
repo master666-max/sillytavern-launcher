@@ -174,6 +174,12 @@ public final class RuntimeProvision {
         // same renameat2/fsync shim, now addressed by its real path
         env.put("NODE_OPTIONS", "--require " + new File(st, "rename-fix.cjs").getAbsolutePath());
         env.put("NPM_CONFIG_REGISTRY", "https://registry.npmmirror.com");
+        // termux openssl bakes its default cnf path to the termux prefix: on
+        // devices where Termux is installed that path exists but belongs to
+        // another app sandbox, so the open() fails EACCES (not ENOENT) and
+        // node dies at startup (exit 13). Point it at our bundled copy.
+        env.put("OPENSSL_CONF", new File(bionicDir, "etc/tls/openssl.cnf").getAbsolutePath());
+        env.put("SSL_CERT_FILE", new File(bionicDir, "etc/tls/cert.pem").getAbsolutePath());
         // V8 compile cache: ST's server module graph is re-parsed on every
         // boot; the on-disk cache (populated on first run) skips that work.
         env.put("NODE_COMPILE_CACHE", new File(cacheDir, "v8-compile-cache").getAbsolutePath());
